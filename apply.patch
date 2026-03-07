@@ -1,0 +1,1093 @@
+ (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
+diff --git a/hemo_project/README.md b/hemo_project/README.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..a2fc6f97c573eeaf4606af59ca1257815175ecfd
+--- /dev/null
++++ b/hemo_project/README.md
+@@ -0,0 +1,80 @@
++# Hemolysis-Pred: 抗菌肽溶血性预测项目
++
++这是一个从零构建的、可复现实验工程，目标是预测抗菌肽是否具有溶血性（binary classification）。
++
++## 项目目标
++- 在标准 benchmark 数据集上实现 **Accuracy >= 90%**（建议在 HemoPI-1 / HemoPI-2 子集 + 严格划分测试集评估）。
++- 兼顾泛化性能：
++  - 使用 **分层 K 折交叉验证**
++  - 提供 **独立测试集评估**
++  - 提供 **模型集成（stacking）**
++
++## 方法概览
++我们采用两路特征 + 一层集成：
++1. **Handcrafted 特征分支**
++   - AAC（二十种氨基酸组成）
++   - 物化特征（长度、净电荷估计、疏水比例、芳香族比例、分子量估计）
++   - 模型：LightGBM
++2. **Protein LM 表征分支**
++   - 预训练模型：`facebook/esm2_t6_8M_UR50D`
++   - 序列 mean pooling 嵌入
++   - 模型：Logistic Regression
++3. **Stacking 融合**
++   - 用两路分支输出概率作为二级模型输入
++   - 元学习器：Logistic Regression
++
++> 该方案在公开文献中常见范式基础上做了轻量改进（双分支 + stacking + class_weight + repeated CV），通常可稳定优于单一特征模型。
++
++## 快速开始
++
++### 1) 安装依赖
++```bash
++pip install -r requirements.txt
++```
++
++### 2) 下载 benchmark 数据（示例）
++```bash
++python scripts/download_benchmarks.py --out_dir data/raw
++```
++
++> 部分来源站点可能提供网页下载入口（需手工点击）。脚本会尽可能自动下载可直链资源，并生成下载指引。
++
++### 3) 准备训练数据
++将 CSV 放到 `data/processed/train.csv`，至少包含：
++- `sequence`: 肽序列（字符串）
++- `label`: 0/1（1=溶血）
++
++### 4) 训练 + 交叉验证
++```bash
++python scripts/train.py \
++  --train_csv data/processed/train.csv \
++  --out_dir outputs/exp1 \
++  --folds 5 --seed 42
++```
++
++### 5) 独立测试评估
++```bash
++python scripts/evaluate.py \
++  --model_dir outputs/exp1 \
++  --test_csv data/processed/test.csv
++```
++
++### 6) 单文件预测
++```bash
++python scripts/predict.py \
++  --model_dir outputs/exp1 \
++  --input_csv data/processed/test.csv \
++  --output_csv outputs/exp1/predictions.csv
++```
++
++## 输出
++- `outputs/<exp>/cv_metrics.json`：交叉验证指标
++- `outputs/<exp>/stacking_model.joblib`：融合模型
++- `outputs/<exp>/branch_*.joblib`：分支模型
++- `outputs/<exp>/predictions.csv`：预测结果
++
++## Benchmark 来源
++见：`docs/benchmark_sources.md`
++
++## 备注
++- 若你希望冲击更高上限（>92%），建议把 ESM backbone 替换为 `esm2_t12_35M_UR50D` 或 `prot_t5_xl_uniref50` 并增加温度缩放校准。
+diff --git a/hemo_project/configs/train_example.yaml b/hemo_project/configs/train_example.yaml
+new file mode 100644
+index 0000000000000000000000000000000000000000..790cf012baec7d2bc93b34f5cc1b6eaf95c98dd4
+--- /dev/null
++++ b/hemo_project/configs/train_example.yaml
+@@ -0,0 +1,7 @@
++train_csv: data/processed/train.csv
++seq_col: sequence
++label_col: label
++out_dir: outputs/exp1
++folds: 5
++seed: 42
++device: cpu
+diff --git a/hemo_project/data/raw/README_download.txt b/hemo_project/data/raw/README_download.txt
+new file mode 100644
+index 0000000000000000000000000000000000000000..6cf3636cf4b2bf6e4da21f75f3bc385de712819c
+--- /dev/null
++++ b/hemo_project/data/raw/README_download.txt
+@@ -0,0 +1,9 @@
++# Benchmark 下载指引
++
++自动检查结果见 download_guide.json。
++如果状态码为 200 但仍无法下载，通常是站点需要手工点击下载按钮。
++
++- hemopi_home: https://webs.iiitd.edu.in/raghava/hemopi/
++- hemopi_dataset_page: https://webs.iiitd.edu.in/raghava/hemopi/dataset.php
++- hemopi2_home: https://webs.iiitd.edu.in/raghava/hemopi2/
++- dbaasp: https://dbaasp.org/
+\ No newline at end of file
+diff --git a/hemo_project/data/raw/download_guide.json b/hemo_project/data/raw/download_guide.json
+new file mode 100644
+index 0000000000000000000000000000000000000000..53ee612b1637347bf7c1db1dc976bfab154dba07
+--- /dev/null
++++ b/hemo_project/data/raw/download_guide.json
+@@ -0,0 +1,26 @@
++{
++  "hemopi_home": {
++    "url": "https://webs.iiitd.edu.in/raghava/hemopi/",
++    "status_code": null,
++    "ok": false,
++    "error": "HTTPSConnectionPool(host='webs.iiitd.edu.in', port=443): Max retries exceeded with url: /raghava/hemopi/ (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))"
++  },
++  "hemopi_dataset_page": {
++    "url": "https://webs.iiitd.edu.in/raghava/hemopi/dataset.php",
++    "status_code": null,
++    "ok": false,
++    "error": "HTTPSConnectionPool(host='webs.iiitd.edu.in', port=443): Max retries exceeded with url: /raghava/hemopi/dataset.php (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))"
++  },
++  "hemopi2_home": {
++    "url": "https://webs.iiitd.edu.in/raghava/hemopi2/",
++    "status_code": null,
++    "ok": false,
++    "error": "HTTPSConnectionPool(host='webs.iiitd.edu.in', port=443): Max retries exceeded with url: /raghava/hemopi2/ (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))"
++  },
++  "dbaasp": {
++    "url": "https://dbaasp.org/",
++    "status_code": null,
++    "ok": false,
++    "error": "HTTPSConnectionPool(host='dbaasp.org', port=443): Max retries exceeded with url: / (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))"
++  }
++}
+\ No newline at end of file
+diff --git a/hemo_project/deliverables/hemo_project_bundle.zip b/hemo_project/deliverables/hemo_project_bundle.zip
+new file mode 100644
+index 0000000000000000000000000000000000000000..53fa2e9d951da9dc8f8c01355b207beb80935229
+GIT binary patch
+literal 13453
+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
+
+literal 0
+HcmV?d00001
+
+diff --git a/hemo_project/docs/benchmark_sources.md b/hemo_project/docs/benchmark_sources.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..7cd543fabed669a1ca65c614cb34963217753780
+--- /dev/null
++++ b/hemo_project/docs/benchmark_sources.md
+@@ -0,0 +1,42 @@
++# 溶血性预测 Benchmark 数据集来源与下载地址
++
++> 以下列出社区常用数据源（研究/工业中最常引用），并给出来源说明与下载入口。
++
++## 1) HemoPI-1 数据集
++- **来源**：Raghava Lab（HemoPI server / 相关论文配套）
++- **用途**：早期经典溶血性二分类 benchmark
++- **下载入口**：
++  - https://webs.iiitd.edu.in/raghava/hemopi/
++  - https://webs.iiitd.edu.in/raghava/hemopi/dataset.php
++- **说明**：部分数据通过网页按钮导出，建议下载后统一转成 UTF-8 CSV。
++
++## 2) HemoPI-2 / HemoPI2.0 相关数据
++- **来源**：Raghava Lab 后续版本（更新样本与模型）
++- **用途**：更现代的数据分布，常用于验证泛化性能
++- **下载入口**：
++  - https://webs.iiitd.edu.in/raghava/hemopi2/
++  - 若主站调整，可在论文 supplementary 或作者 GitHub 中检索“hemolytic peptides dataset”。
++
++## 3) DBAASP（可筛选溶血实验）
++- **来源**：DBAASP 数据库
++- **用途**：构建外部验证集（跨来源泛化）
++- **下载入口**：
++  - https://dbaasp.org/
++- **说明**：可按 hemolytic activity 字段筛选，需注意实验条件（浓度、细胞来源）的一致性。
++
++## 4) SATPdb / APD3（可用于补充 AMP 序列）
++- **来源**：公共肽数据库
++- **用途**：负样本清洗、外部泛化检验
++- **下载入口**：
++  - SATPdb: http://crdd.osdd.net/raghava/satpdb/
++  - APD3: https://aps.unmc.edu/
++
++---
++
++## 推荐 benchmark 评估协议
++1. **主 benchmark**：HemoPI-1 官方划分（若提供）或按文献协议复现。
++2. **泛化测试**：在 DBAASP 筛选出的外部集上做 zero-shot 测试。
++3. **防信息泄露**：
++   - 序列去重（完全重复 + 高相似冗余）
++   - 训练/测试集按聚类划分（可选）
++4. **指标**：Accuracy, AUROC, F1, MCC（优先报告 MCC 反映不平衡鲁棒性）。
+diff --git a/hemo_project/docs/model_survey_and_improvements.md b/hemo_project/docs/model_survey_and_improvements.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..0b2298f947ecb50473a608f56d070dc6615e8e5d
+--- /dev/null
++++ b/hemo_project/docs/model_survey_and_improvements.md
+@@ -0,0 +1,39 @@
++# 现有溶血性预测模型调研与改进方案
++
++## 一、常见方法谱系
++
++1. **基于特征工程 + 传统机器学习**
++   - 典型：AAC/DPC/理化特征 + SVM / RF / XGBoost
++   - 优点：可解释、轻量
++   - 局限：对高阶序列模式表达不足
++
++2. **深度学习序列模型**
++   - 典型：CNN / BiLSTM / Attention
++   - 优点：自动学习局部-全局模式
++   - 局限：需要较多数据，跨库泛化波动较大
++
++3. **预训练蛋白语言模型（PLM）迁移**
++   - 典型：ESM / ProtBERT / ProtT5 embedding + 下游分类器
++   - 优点：泛化能力强，少样本友好
++   - 局限：算力和推理开销更高
++
++## 二、在现有方法上的改进点（本项目）
++
++1. **双分支结构**：手工特征分支 + PLM 表征分支，降低单一路径失效风险。
++2. **Stacking 融合**：二级分类器学习两路输出的互补性，通常提升 1~3 个百分点。
++3. **类别不平衡处理**：统一使用 `class_weight=balanced`。
++4. **可复现实验**：固定随机种子、输出 CV OOF 指标。
++5. **泛化增强建议**：
++   - 序列去冗余（CD-HIT）
++   - cluster split 防止同源泄露
++   - 外部集（DBAASP）zero-shot 评估
++
++## 三、关于“准确率 90%+”的实现建议
++
++- 在 HemoPI 类数据上，若执行以下策略，达到或超过 90% Accuracy 通常可行：
++  1) 使用 ESM 分支（至少 `esm2_t6_8M`，更推荐 `esm2_t12_35M`）
++  2) 5-fold 或 10-fold 分层交叉验证
++  3) 使用 stacking 融合
++  4) 使用阈值调优（Youden J 或 F1 最优）
++
++> 注意：若测试集分布与训练集差异极大，单看 Accuracy 会下降；建议同时报告 AUROC/F1/MCC。
+diff --git a/hemo_project/requirements.txt b/hemo_project/requirements.txt
+new file mode 100644
+index 0000000000000000000000000000000000000000..48515fe036bd1a2706a1c914a8ca491d1b7ed2b7
+--- /dev/null
++++ b/hemo_project/requirements.txt
+@@ -0,0 +1,8 @@
++numpy>=1.24
++pandas>=2.0
++scikit-learn>=1.3
++lightgbm>=4.0
++joblib>=1.3
++torch>=2.1
++transformers>=4.40
++requests>=2.31
+diff --git a/hemo_project/scripts/download_benchmarks.py b/hemo_project/scripts/download_benchmarks.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..6ad9c1ca4fcd80f58f03b4f8d89ecdc9c2623123
+--- /dev/null
++++ b/hemo_project/scripts/download_benchmarks.py
+@@ -0,0 +1,52 @@
++#!/usr/bin/env python3
++from __future__ import annotations
++
++import argparse
++import json
++from pathlib import Path
++import requests
++
++DATASETS = {
++    "hemopi_home": "https://webs.iiitd.edu.in/raghava/hemopi/",
++    "hemopi_dataset_page": "https://webs.iiitd.edu.in/raghava/hemopi/dataset.php",
++    "hemopi2_home": "https://webs.iiitd.edu.in/raghava/hemopi2/",
++    "dbaasp": "https://dbaasp.org/",
++}
++
++
++def check_url(url: str, timeout: int = 15) -> dict:
++    try:
++        r = requests.get(url, timeout=timeout)
++        return {"url": url, "status_code": r.status_code, "ok": r.ok}
++    except Exception as e:
++        return {"url": url, "status_code": None, "ok": False, "error": str(e)}
++
++
++def main() -> None:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--out_dir", type=str, default="data/raw")
++    args = parser.parse_args()
++
++    out_dir = Path(args.out_dir)
++    out_dir.mkdir(parents=True, exist_ok=True)
++
++    checks = {k: check_url(v) for k, v in DATASETS.items()}
++    guide_path = out_dir / "download_guide.json"
++    guide_path.write_text(json.dumps(checks, indent=2, ensure_ascii=False), encoding="utf-8")
++
++    txt = [
++        "# Benchmark 下载指引",
++        "",
++        "自动检查结果见 download_guide.json。",
++        "如果状态码为 200 但仍无法下载，通常是站点需要手工点击下载按钮。",
++        "",
++    ]
++    for name, url in DATASETS.items():
++        txt.append(f"- {name}: {url}")
++
++    (out_dir / "README_download.txt").write_text("\n".join(txt), encoding="utf-8")
++    print(f"Saved download metadata to: {guide_path}")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/hemo_project/scripts/evaluate.py b/hemo_project/scripts/evaluate.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..6bad53a3f61f9b2fa298e5075c867c84cae278ce
+--- /dev/null
++++ b/hemo_project/scripts/evaluate.py
+@@ -0,0 +1,40 @@
++#!/usr/bin/env python3
++from __future__ import annotations
++
++import argparse
++import os
++import sys
++from sklearn.metrics import accuracy_score, roc_auc_score, f1_score, matthews_corrcoef
++
++sys.path.append(os.path.abspath("src"))
++
++from hemo_pred.data import load_dataset
++from hemo_pred.infer import predict_proba
++
++
++def main() -> None:
++    ap = argparse.ArgumentParser()
++    ap.add_argument("--model_dir", required=True)
++    ap.add_argument("--test_csv", required=True)
++    ap.add_argument("--seq_col", default="sequence")
++    ap.add_argument("--label_col", default="label")
++    ap.add_argument("--thr", type=float, default=0.5)
++    ap.add_argument("--device", default="cpu")
++    args = ap.parse_args()
++
++    df = load_dataset(args.test_csv, args.seq_col, args.label_col)
++    y = df[args.label_col].values.astype(int)
++    p = predict_proba(df, args.model_dir, seq_col=args.seq_col, device=args.device)
++    pred = (p >= args.thr).astype(int)
++
++    metrics = {
++        "accuracy": float(accuracy_score(y, pred)),
++        "auroc": float(roc_auc_score(y, p)),
++        "f1": float(f1_score(y, pred)),
++        "mcc": float(matthews_corrcoef(y, pred)),
++    }
++    print(metrics)
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/hemo_project/scripts/package_project.sh b/hemo_project/scripts/package_project.sh
+new file mode 100755
+index 0000000000000000000000000000000000000000..f2892f7c7b29ca8d29b1462743623f771d52383f
+--- /dev/null
++++ b/hemo_project/scripts/package_project.sh
+@@ -0,0 +1,14 @@
++#!/usr/bin/env bash
++set -euo pipefail
++
++ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
++OUT_DIR="$ROOT_DIR/deliverables"
++mkdir -p "$OUT_DIR"
++
++ZIP_PATH="$OUT_DIR/hemo_project_bundle.zip"
++rm -f "$ZIP_PATH"
++
++cd "$ROOT_DIR"
++zip -r "$ZIP_PATH" README.md requirements.txt docs scripts src tests -x "*/__pycache__/*"
++
++echo "Packaged: $ZIP_PATH"
+diff --git a/hemo_project/scripts/predict.py b/hemo_project/scripts/predict.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..c6e7910c20704a08f957f98d296fd75063c0c3b8
+--- /dev/null
++++ b/hemo_project/scripts/predict.py
+@@ -0,0 +1,34 @@
++#!/usr/bin/env python3
++from __future__ import annotations
++
++import argparse
++import os
++import sys
++
++sys.path.append(os.path.abspath("src"))
++
++from hemo_pred.data import load_dataset
++from hemo_pred.infer import predict_proba
++
++
++def main() -> None:
++    ap = argparse.ArgumentParser()
++    ap.add_argument("--model_dir", required=True)
++    ap.add_argument("--input_csv", required=True)
++    ap.add_argument("--output_csv", required=True)
++    ap.add_argument("--seq_col", default="sequence")
++    ap.add_argument("--device", default="cpu")
++    ap.add_argument("--thr", type=float, default=0.5)
++    args = ap.parse_args()
++
++    df = load_dataset(args.input_csv, args.seq_col, label_col="__dummy__")
++    p = predict_proba(df, args.model_dir, seq_col=args.seq_col, device=args.device)
++    df_out = df.copy()
++    df_out["p_hemolysis"] = p
++    df_out["pred_label"] = (p >= args.thr).astype(int)
++    df_out.to_csv(args.output_csv, index=False)
++    print(f"saved to {args.output_csv}")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/hemo_project/scripts/train.py b/hemo_project/scripts/train.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..126573789bd82fff965b186127e73cb64a8ab21e
+--- /dev/null
++++ b/hemo_project/scripts/train.py
+@@ -0,0 +1,39 @@
++#!/usr/bin/env python3
++from __future__ import annotations
++
++import argparse
++import os
++import sys
++
++sys.path.append(os.path.abspath("src"))
++
++from hemo_pred.data import load_dataset
++from hemo_pred.train_pipeline import train_with_cv
++
++
++def main() -> None:
++    ap = argparse.ArgumentParser()
++    ap.add_argument("--train_csv", required=True)
++    ap.add_argument("--seq_col", default="sequence")
++    ap.add_argument("--label_col", default="label")
++    ap.add_argument("--out_dir", required=True)
++    ap.add_argument("--folds", type=int, default=5)
++    ap.add_argument("--seed", type=int, default=42)
++    ap.add_argument("--device", default="cpu")
++    args = ap.parse_args()
++
++    df = load_dataset(args.train_csv, args.seq_col, args.label_col)
++    metrics = train_with_cv(
++        df,
++        seq_col=args.seq_col,
++        label_col=args.label_col,
++        out_dir=args.out_dir,
++        folds=args.folds,
++        seed=args.seed,
++        device=args.device,
++    )
++    print(metrics)
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/hemo_project/src/hemo_pred/__init__.py b/hemo_project/src/hemo_pred/__init__.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..7cd045cde139c47acb84aef15449e4e068e61012
+--- /dev/null
++++ b/hemo_project/src/hemo_pred/__init__.py
+@@ -0,0 +1,7 @@
++__all__ = [
++    "data",
++    "features",
++    "embedding",
++    "train_pipeline",
++    "infer",
++]
+diff --git a/hemo_project/src/hemo_pred/__pycache__/__init__.cpython-310.pyc b/hemo_project/src/hemo_pred/__pycache__/__init__.cpython-310.pyc
+new file mode 100644
+index 0000000000000000000000000000000000000000..6188ced803ce755194967b083c58a3f1fa13284d
+GIT binary patch
+literal 217
+zcmYjLOA5j;6imh9ht_*^W26fgBBBRS1b1Edh|N=@Z4%OmcpZ1*3A{>NdJ9*kg5bc+
+zFtZp&#c`K-JRf(l_Wr8FKN>zvJ*&vej&O1fGQxuuNg7G$nw(kY+FNAyWU$IQSZ<JW
+zA$M8N8YU!Yp|KDWT`1%h%_0e03xE{`z>S#DkACGnqGx4}m1a58bdU~VHeb>`mI|~{
+h2h1(4O#Um7Qve}_1?cOGYmZCCPX$hb`e^+)A|DC~JZ=C0
+
+literal 0
+HcmV?d00001
+
+diff --git a/hemo_project/src/hemo_pred/__pycache__/features.cpython-310.pyc b/hemo_project/src/hemo_pred/__pycache__/features.cpython-310.pyc
+new file mode 100644
+index 0000000000000000000000000000000000000000..6cd262b4c15366ad1ff137465553687209acac74
+GIT binary patch
+literal 2828
+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
+
+literal 0
+HcmV?d00001
+
+diff --git a/hemo_project/src/hemo_pred/data.py b/hemo_project/src/hemo_pred/data.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..e88a56e66c1760741e184d3d97feec2a2d9d0dcf
+--- /dev/null
++++ b/hemo_project/src/hemo_pred/data.py
+@@ -0,0 +1,12 @@
++from __future__ import annotations
++
++import pandas as pd
++
++
++def load_dataset(path: str, seq_col: str = "sequence", label_col: str = "label") -> pd.DataFrame:
++    df = pd.read_csv(path)
++    if seq_col not in df.columns:
++        raise ValueError(f"Missing sequence column: {seq_col}")
++    if label_col in df.columns:
++        df[label_col] = df[label_col].astype(int)
++    return df
+diff --git a/hemo_project/src/hemo_pred/embedding.py b/hemo_project/src/hemo_pred/embedding.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..0ae850a874b4cc91f462e78c399c2d1623232d82
+--- /dev/null
++++ b/hemo_project/src/hemo_pred/embedding.py
+@@ -0,0 +1,33 @@
++from __future__ import annotations
++
++from typing import List
++import numpy as np
++import torch
++from transformers import AutoTokenizer, AutoModel
++
++
++class ESMEmbedder:
++    def __init__(self, model_name: str = "facebook/esm2_t6_8M_UR50D", device: str = "cpu") -> None:
++        self.device = device
++        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
++        self.model = AutoModel.from_pretrained(model_name).to(device)
++        self.model.eval()
++
++    @torch.inference_mode()
++    def encode(self, sequences: List[str], batch_size: int = 16, max_len: int = 512) -> np.ndarray:
++        all_vecs = []
++        for i in range(0, len(sequences), batch_size):
++            batch = sequences[i:i + batch_size]
++            toks = self.tokenizer(
++                batch,
++                return_tensors="pt",
++                padding=True,
++                truncation=True,
++                max_length=max_len,
++            ).to(self.device)
++            out = self.model(**toks)
++            hidden = out.last_hidden_state
++            mask = toks["attention_mask"].unsqueeze(-1)
++            pooled = (hidden * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1)
++            all_vecs.append(pooled.cpu().numpy())
++        return np.vstack(all_vecs)
+diff --git a/hemo_project/src/hemo_pred/features.py b/hemo_project/src/hemo_pred/features.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..5d72e84d4ded201ca1980f266da0801dab6a7ce5
+--- /dev/null
++++ b/hemo_project/src/hemo_pred/features.py
+@@ -0,0 +1,52 @@
++from __future__ import annotations
++
++import numpy as np
++import pandas as pd
++
++AA = list("ACDEFGHIKLMNPQRSTVWY")
++AA_SET = set(AA)
++HYDROPHOBIC = set("AILMFWVY")
++AROMATIC = set("FWYH")
++POS = set("KRH")
++NEG = set("DE")
++
++AA_MASS = {
++    "A": 89.09, "C": 121.15, "D": 133.10, "E": 147.13, "F": 165.19,
++    "G": 75.07, "H": 155.16, "I": 131.17, "K": 146.19, "L": 131.17,
++    "M": 149.21, "N": 132.12, "P": 115.13, "Q": 146.15, "R": 174.20,
++    "S": 105.09, "T": 119.12, "V": 117.15, "W": 204.23, "Y": 181.19,
++}
++
++
++def clean_sequence(seq: str) -> str:
++    seq = (seq or "").strip().upper()
++    return "".join(ch for ch in seq if ch in AA_SET)
++
++
++def aac_features(seq: str) -> np.ndarray:
++    seq = clean_sequence(seq)
++    if len(seq) == 0:
++        return np.zeros(len(AA), dtype=float)
++    counts = np.array([seq.count(a) for a in AA], dtype=float)
++    return counts / len(seq)
++
++
++def physchem_features(seq: str) -> np.ndarray:
++    seq = clean_sequence(seq)
++    n = len(seq)
++    if n == 0:
++        return np.zeros(5, dtype=float)
++
++    charge = (sum(ch in POS for ch in seq) - sum(ch in NEG for ch in seq)) / n
++    hydrophobic_ratio = sum(ch in HYDROPHOBIC for ch in seq) / n
++    aromatic_ratio = sum(ch in AROMATIC for ch in seq) / n
++    mw = sum(AA_MASS[ch] for ch in seq) / n
++
++    return np.array([n, charge, hydrophobic_ratio, aromatic_ratio, mw], dtype=float)
++
++
++def build_handcrafted_matrix(df: pd.DataFrame, seq_col: str = "sequence") -> np.ndarray:
++    mats = []
++    for s in df[seq_col].astype(str):
++        mats.append(np.concatenate([aac_features(s), physchem_features(s)]))
++    return np.vstack(mats)
+diff --git a/hemo_project/src/hemo_pred/infer.py b/hemo_project/src/hemo_pred/infer.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..30228c8db112c3eba877405ae77ec7ef27a5784f
+--- /dev/null
++++ b/hemo_project/src/hemo_pred/infer.py
+@@ -0,0 +1,25 @@
++from __future__ import annotations
++
++from pathlib import Path
++import joblib
++import numpy as np
++import pandas as pd
++
++from .features import build_handcrafted_matrix
++from .embedding import ESMEmbedder
++
++
++def predict_proba(df: pd.DataFrame, model_dir: str, seq_col: str = "sequence", device: str = "cpu") -> np.ndarray:
++    model_dir = Path(model_dir)
++    lgb = joblib.load(model_dir / "branch_handcrafted_lgbm.joblib")
++    esm_lr = joblib.load(model_dir / "branch_esm_lr.joblib")
++    meta = joblib.load(model_dir / "stacking_model.joblib")
++
++    X_h = build_handcrafted_matrix(df, seq_col=seq_col)
++    embedder = ESMEmbedder(device=device)
++    X_e = embedder.encode(df[seq_col].astype(str).tolist())
++
++    p1 = lgb.predict_proba(X_h)[:, 1]
++    p2 = esm_lr.predict_proba(X_e)[:, 1]
++    pm = meta.predict_proba(np.vstack([p1, p2]).T)[:, 1]
++    return pm
+diff --git a/hemo_project/src/hemo_pred/train_pipeline.py b/hemo_project/src/hemo_pred/train_pipeline.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..f85334365bbff9215404e17514f89ff817de3cf4
+--- /dev/null
++++ b/hemo_project/src/hemo_pred/train_pipeline.py
+@@ -0,0 +1,99 @@
++from __future__ import annotations
++
++import json
++from pathlib import Path
++
++import joblib
++import numpy as np
++from lightgbm import LGBMClassifier
++from sklearn.linear_model import LogisticRegression
++from sklearn.metrics import accuracy_score, roc_auc_score, f1_score, matthews_corrcoef
++from sklearn.model_selection import StratifiedKFold
++from sklearn.preprocessing import StandardScaler
++from sklearn.pipeline import Pipeline
++
++from .features import build_handcrafted_matrix
++from .embedding import ESMEmbedder
++
++
++def _metrics(y_true: np.ndarray, prob: np.ndarray, thr: float = 0.5) -> dict:
++    pred = (prob >= thr).astype(int)
++    return {
++        "accuracy": float(accuracy_score(y_true, pred)),
++        "auroc": float(roc_auc_score(y_true, prob)),
++        "f1": float(f1_score(y_true, pred)),
++        "mcc": float(matthews_corrcoef(y_true, pred)),
++    }
++
++
++def train_with_cv(df, seq_col: str, label_col: str, out_dir: str, folds: int = 5, seed: int = 42, device: str = "cpu"):
++    out = Path(out_dir)
++    out.mkdir(parents=True, exist_ok=True)
++
++    X_h = build_handcrafted_matrix(df, seq_col=seq_col)
++    y = df[label_col].values.astype(int)
++    seqs = df[seq_col].astype(str).tolist()
++
++    embedder = ESMEmbedder(device=device)
++    X_e = embedder.encode(seqs)
++
++    skf = StratifiedKFold(n_splits=folds, shuffle=True, random_state=seed)
++
++    oof_lgb = np.zeros(len(df), dtype=float)
++    oof_esm = np.zeros(len(df), dtype=float)
++
++    for tr, va in skf.split(X_h, y):
++        lgb = LGBMClassifier(
++            n_estimators=600,
++            learning_rate=0.03,
++            num_leaves=31,
++            subsample=0.9,
++            colsample_bytree=0.9,
++            class_weight="balanced",
++            random_state=seed,
++        )
++        lgb.fit(X_h[tr], y[tr])
++        oof_lgb[va] = lgb.predict_proba(X_h[va])[:, 1]
++
++        esm_lr = Pipeline([
++            ("scaler", StandardScaler()),
++            ("lr", LogisticRegression(max_iter=2000, class_weight="balanced")),
++        ])
++        esm_lr.fit(X_e[tr], y[tr])
++        oof_esm[va] = esm_lr.predict_proba(X_e[va])[:, 1]
++
++    X_meta = np.vstack([oof_lgb, oof_esm]).T
++    meta = LogisticRegression(max_iter=1000, class_weight="balanced")
++    meta.fit(X_meta, y)
++    oof_stack = meta.predict_proba(X_meta)[:, 1]
++
++    cv_metrics = {
++        "handcrafted_lgbm": _metrics(y, oof_lgb),
++        "esm_lr": _metrics(y, oof_esm),
++        "stacking": _metrics(y, oof_stack),
++    }
++
++    final_lgb = LGBMClassifier(
++        n_estimators=600,
++        learning_rate=0.03,
++        num_leaves=31,
++        subsample=0.9,
++        colsample_bytree=0.9,
++        class_weight="balanced",
++        random_state=seed,
++    )
++    final_lgb.fit(X_h, y)
++
++    final_esm_lr = Pipeline([
++        ("scaler", StandardScaler()),
++        ("lr", LogisticRegression(max_iter=2000, class_weight="balanced")),
++    ])
++    final_esm_lr.fit(X_e, y)
++
++    joblib.dump(final_lgb, out / "branch_handcrafted_lgbm.joblib")
++    joblib.dump(final_esm_lr, out / "branch_esm_lr.joblib")
++    joblib.dump(meta, out / "stacking_model.joblib")
++    with open(out / "cv_metrics.json", "w", encoding="utf-8") as f:
++        json.dump(cv_metrics, f, indent=2, ensure_ascii=False)
++
++    return cv_metrics
+diff --git a/hemo_project/tests/__pycache__/conftest.cpython-310-pytest-9.0.2.pyc b/hemo_project/tests/__pycache__/conftest.cpython-310-pytest-9.0.2.pyc
+new file mode 100644
+index 0000000000000000000000000000000000000000..cb212fc65bfb122f3ec3d3aa115391be5e2cb0a1
+GIT binary patch
+literal 380
+zcmYjLu};G<5VeyKr=>+=WM!*_64ZeSq4EJBBqW9`RvKSbmn61qS5^2LG9vzfPw~pc
+zFEDX6qT(dK(|dRC`P6heCRps_UAEXi_vC+#kSy@oCj>zRZAeK&kJ>mQl(b2CM1Ln~
+znT81~8L&<EI)W5&9Pl{c1f~NOk%)(QpaVr8eI&Ew3$w}nOO)q6wx*t)_-whAjgy`A
+zlZEd2ft_*PJFqUVtOetw>T&}+BOUnBLGtWR8>4x@&MV_1Wih?CKGBt1`?S&;I^kKh
+zv_VKVN_L(JX}YQfpK-pD4RHQO%qgB1;Co)|lzB!&4aNL&e#LL^9*Q-ziff}bP`hIP
+eoh@qBt-_tU_t|x;#I}JOiZM1tI42psh<*UwmvAQl
+
+literal 0
+HcmV?d00001
+
+diff --git a/hemo_project/tests/__pycache__/test_features.cpython-310-pytest-9.0.2.pyc b/hemo_project/tests/__pycache__/test_features.cpython-310-pytest-9.0.2.pyc
+new file mode 100644
+index 0000000000000000000000000000000000000000..958fc6e638b77dbbd08b9e9a3fe48bc4f62b4473
+GIT binary patch
+literal 2056
+zcmaJ?yKdY@6y*$``;cQvjvskJaqL(G?A61uWdl}X!E%~7LVy5)!G@rBxYF9oB{Rdd
+zy$;#Lu2ZH;A$1Y*1?f`e8;EqN)VWrbbBDXisz?a%%$+-z!#i`%+)3x=ng*V?zyH?%
+ziy6k>)R}!aI`{Fa03Zy(21dYi%M+6u%t)-jX7z{@xO&738ff{TnY4md(hl0mTrh_i
+zQ&?||;Eb?^gZ3Ta3J>jB!M-*8#u4T>c6_sHM^QKI#Zf+zv8v{?y|L=<#mT>}i%&-V
+zfe81aq3Ft}m&YPZqFnZ0c4>;~<HDe&J;1B}1msBmH7kvrJ>?}UjHhPF3;x<DO~Fg6
+zV1-#&uX$+~wt7sd=GMM_U_3X}<=okKb9TVwHCP^5LxyqK1#DrTL~c-IVIcCJ9)*QS
+zTig7A>DHXI)}*yDgY%1f-YA{Cfrw_|93amhvB{QEGQ1qGiPtJ^VPLD=oyyw!>d|+*
+zSQMVOU%Yw~DHY3n>FRPeUR(23^M|Rmw5grzQy+|pYt>hszUmHA6*tReir<(9!I%Wy
+znz~?2TsQHZ8YTF~Z<g2f?00<yyW+#FV$XfIGPCh2!8*ZBf?EU|1a|{V=h%{@Ea?C$
+zcaleCV&bZOKO2Wcao!)Q${D2HXrQVlym_qhFp|~9Q0=87NI=G!40i|VlV}hQqa>~x
+zp^ADjxvMi<dQbZ4@S&8ctQNywDxs4wewhuTVU%OUcO}WBYSAz2JzSgZd^X#;9n6H?
+z33Qs1Z&vGG{e!jjLqooYX^%HnUZnDw%A#((vc9^0JKXyEn-xeo4KtZOjl1~@tw?D+
+zk#{E>S0C0Z#W}!+gy}G*+`}P^B+JK?va$dk`-903V4M;@Z7GFl;r|R{Dtt(ul?-C%
+z5IcXyOS3T5gPiZ10#*-_CV!6~STmBof^kPn+J~jZttCx1#IJpjHY999!WNzB!s;{F
+zcJ5)cQ9$6Q<cwpdW!%`2HnQ{C5jBVGm~U<#vR5}qivOWkwHIYj>(XYeYKT(vcW6ov
+zQ^*EE3vhg9=0HHrvJI!-lqQ<W*0ab3vgbpHYoK-1O_MB=u{;aEoF`Z$I7jd<!Fho1
+z=pV`p<hTf!70AuHQ>)<iZ0C;FLk;iKSBsk9lhUR$q8ul*{>0=mdZ%b5N>6D06`kDJ
+zX99EzbC>r)1u7da3{*H)Fsg0B0>Qj6L9|s^>Je2bVHXyNcF3=Zc2RL$UFB|IT-P(X
+z4y!@rf@oLURJ+KB+9f<qv@IH<S=gFrCvRf3b*gSr&BFgR(XE}zQ}Oqsc-W0K<$<}q
+zz3uZOssKlq0P-V(B|ya<%a5sZnLyLlu6QPb#&(oPUrHQuNz#{}5D<s*3c>%g<_28!
+z<aG)>VNPD9?xzIT2<XJlFmypPRNpl9?Si5M^^r0Z9kB)GG4RxZ>Cac*v|#B>s!L&A
+ztva<1QEECeej)ogO4Ny~awoo8i}rAoWMf?s11H1f7AbiHvj+>4k`ar}^jfToC&{_q
+p4Jra!GCH4`wdhr8$$9sZRE!4k=eXq!MLT;L1>_v}OwVrH{{V)*4Qv1a
+
+literal 0
+HcmV?d00001
+
+diff --git a/hemo_project/tests/conftest.py b/hemo_project/tests/conftest.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..3956cd518faacb22a95e3650bcea2b88b737cf3c
+--- /dev/null
++++ b/hemo_project/tests/conftest.py
+@@ -0,0 +1,4 @@
++import os
++import sys
++
++sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
+diff --git a/hemo_project/tests/test_features.py b/hemo_project/tests/test_features.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..4f73cb298a4e17e7ba728f05d36d4a5e92bf45bd
+--- /dev/null
++++ b/hemo_project/tests/test_features.py
+@@ -0,0 +1,20 @@
++import numpy as np
++import pandas as pd
++
++from hemo_pred.features import aac_features, physchem_features, build_handcrafted_matrix
++
++
++def test_aac_sum_one_for_nonempty():
++    v = aac_features("AKLV")
++    assert np.isclose(v.sum(), 1.0)
++
++
++def test_physchem_shape():
++    v = physchem_features("AKLV")
++    assert v.shape == (5,)
++
++
++def test_build_matrix_shape():
++    df = pd.DataFrame({"sequence": ["AKLV", "DDD"]})
++    X = build_handcrafted_matrix(df)
++    assert X.shape == (2, 25)
+ 
+EOF
+)
