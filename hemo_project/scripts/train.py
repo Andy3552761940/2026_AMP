@@ -20,6 +20,9 @@ def main() -> None:
     ap.add_argument("--folds", type=int, default=5)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--device", default="cpu")
+    ap.add_argument("--esm_model_name", default="facebook/esm2_t12_35M_UR50D")
+    ap.add_argument("--esm_batch_size", type=int, default=16)
+    ap.add_argument("--esm_max_len", type=int, default=512)
     args = ap.parse_args()
 
     df = load_dataset(args.train_csv, args.seq_col, args.label_col)
@@ -31,6 +34,9 @@ def main() -> None:
         folds=args.folds,
         seed=args.seed,
         device=args.device,
+        esm_model_name=args.esm_model_name,
+        esm_batch_size=args.esm_batch_size,
+        esm_max_len=args.esm_max_len,
     )
     print(metrics)
 

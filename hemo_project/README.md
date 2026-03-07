@@ -16,7 +16,7 @@
    - 物化特征（长度、净电荷估计、疏水比例、芳香族比例、分子量估计）
    - 模型：LightGBM
 2. **Protein LM 表征分支**
-   - 预训练模型：`facebook/esm2_t6_8M_UR50D`
+   - 预训练模型：`facebook/esm2_t12_35M_UR50D`（默认，可通过参数切换）
    - 序列 mean pooling 嵌入
    - 模型：Logistic Regression
 3. **Stacking 融合**
@@ -64,7 +64,8 @@ bash scripts/one_click_run.sh \
 python scripts/train.py \
   --train_csv data/processed/train.csv \
   --out_dir outputs/exp1 \
-  --folds 5 --seed 42
+  --folds 5 --seed 42 \
+  --esm_model_name facebook/esm2_t12_35M_UR50D
 ```
 
 ### 5) 独立测试评估
@@ -83,8 +84,10 @@ python scripts/predict.py \
 ```
 
 ## 输出
-- `outputs/<exp>/cv_metrics.json`：交叉验证指标
+- `outputs/<exp>/cv_metrics.json`：交叉验证指标（含阈值调优结果）
 - `outputs/<exp>/stacking_model.joblib`：融合模型
+- `outputs/<exp>/decision_threshold.json`：自动搜索的最佳分类阈值
+- `outputs/<exp>/model_config.json`：训练时的 ESM 配置
 - `outputs/<exp>/branch_*.joblib`：分支模型
 - `outputs/<exp>/predictions.csv`：预测结果
 
