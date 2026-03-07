@@ -1,0 +1,7 @@
+train_csv: data/processed/train.csv
+seq_col: sequence
+label_col: label
+out_dir: outputs/exp1
+folds: 5
+seed: 42
+device: cpu

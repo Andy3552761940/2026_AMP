@@ -1,0 +1,26 @@
+{
+  "hemopi_home": {
+    "url": "https://webs.iiitd.edu.in/raghava/hemopi/",
+    "status_code": null,
+    "ok": false,
+    "error": "HTTPSConnectionPool(host='webs.iiitd.edu.in', port=443): Max retries exceeded with url: /raghava/hemopi/ (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))"
+  },
+  "hemopi_dataset_page": {
+    "url": "https://webs.iiitd.edu.in/raghava/hemopi/dataset.php",
+    "status_code": null,
+    "ok": false,
+    "error": "HTTPSConnectionPool(host='webs.iiitd.edu.in', port=443): Max retries exceeded with url: /raghava/hemopi/dataset.php (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))"
+  },
+  "hemopi2_home": {
+    "url": "https://webs.iiitd.edu.in/raghava/hemopi2/",
+    "status_code": null,
+    "ok": false,
+    "error": "HTTPSConnectionPool(host='webs.iiitd.edu.in', port=443): Max retries exceeded with url: /raghava/hemopi2/ (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))"
+  },
+  "dbaasp": {
+    "url": "https://dbaasp.org/",
+    "status_code": null,
+    "ok": false,
+    "error": "HTTPSConnectionPool(host='dbaasp.org', port=443): Max retries exceeded with url: / (Caused by ProxyError('Unable to connect to proxy', OSError('Tunnel connection failed: 403 Forbidden')))"
+  }
+}
